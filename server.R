@@ -125,19 +125,19 @@ plot_brand    <- function(placement, plot_type, fill_radio) {
         mutate(type_fl = type == 'network') %>%
         filter(!is.na(site_f)) %>%
         mutate(shade = ifelse(dense_rank(site_f) %% 10 == 0, 1, 0)) 
-      
-      gg <- ggplot(placement_expand, aes(x = date, y = site_f)) +
+      # key <- row.names(placement_expand)
+      gg <- ggplot(placement_expand, aes(x = date, y = site_f, key = n_formats)) +
         coord_equal() +
         labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " formatdays")) +
-        geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
-        scale_size_manual(values=c(network = param$plot_num$dot_size, other = NA), guide="none") +
+        # geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
+        # scale_size_manual(values=c(network = param$plot_num$dot_size, other = NA), guide="none") +
         scale_x_date(date_breaks = param$plot_str$date_breaks, expand=c(0,0)) +
         theme_tufte() +
         theme(title = element_text(size = param$plot_num$text_size), plot.title = element_text(hjust = 0)) +
         theme(axis.ticks = element_blank()) +
         theme(panel.border = element_blank())
 
-      gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) + 
+      gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list, key = n_formats)) + 
         theme(legend.position = "none") +
         scale_fill_discrete(na.value = "white") 
       gg
@@ -198,7 +198,12 @@ shinyServer(function(input, output) {
   
   output$map <- renderPlotly({
     if (v$doPlot == FALSE) return()
-    isolate({ ggplotly(plot_brand(filteredInput(), plot_type = input$radio, input$fill)) })
+    isolate({ ggplotly(plot_brand(filteredInput(), plot_type = input$radio, input$fill)) %>% layout(dragmode = 'select') })
+  })
+  
+  output$click <- renderPrint({
+    d <- event_data("plotly_click")
+    if (is.null(d)) "Click and drag events (i.e., select/lasso) appear here (double-click to clear)" else d
   })
   
 })
