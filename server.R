@@ -94,7 +94,8 @@ filter_data   <- function(data, top_net, top_sub, top_creative, category, clean,
     mutate(rank_net = dense_rank(desc(strength_net))) %>%
     filter(rank_net <= top_net) %>%
     mutate(rank_ad = dense_rank(desc(strength_ad))) %>%
-    mutate(adId_list = ifelse(rank_ad <= top_creative, adId_list, 'other'))
+    mutate(adId_list = ifelse(rank_ad <= top_creative, adId_list, 'other')) %>%
+    filter(rank_sub == 1)
   
   if (tolower(category) != 'all') placement <- filter(placement, stri_detect_regex(site_category, gsub(', ', '|', tolower(category))))
   if (clean > 0) placement <- placement %>% group_by(subbrands_list, banner_network, site) %>% filter(length(unique(date)) > clean) %>% ungroup()
@@ -124,22 +125,25 @@ plot_brand    <- function(placement, plot_type, fill_radio) {
         mutate(site_f = factor(site_net, levels = lev_site_net$site_net)) %>%
         mutate(type_fl = type == 'network') %>%
         filter(!is.na(site_f)) %>%
-        mutate(shade = ifelse(dense_rank(site_f) %% 10 == 0, 1, 0)) 
+        mutate(shade = ifelse(dense_rank(site_f) %% 10 == 0, 1, 0)) %>%
+        mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '/d*'), adId_list)) %>%
+        mutate(adId = as.integer(adId)) %>%
+        filter(!is.na(adId))
       # key <- row.names(placement_expand)
-      gg <- ggplot(placement_expand, aes(x = date, y = site_f, key = n_formats)) +
-        coord_equal() +
-        labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " formatdays")) +
-        # geom_point(aes(size = ifelse(type_fl, 'network', 'other'))) +
-        # scale_size_manual(values=c(network = param$plot_num$dot_size, other = NA), guide="none") +
-        scale_x_date(date_breaks = param$plot_str$date_breaks, expand=c(0,0)) +
-        theme_tufte() +
-        theme(title = element_text(size = param$plot_num$text_size), plot.title = element_text(hjust = 0)) +
-        theme(axis.ticks = element_blank()) +
-        theme(panel.border = element_blank())
+      # gg <- ggplot(placement_expand, aes(x = date, y = site_f, key = n_formats)) +
+      #   coord_equal() +
+      #   labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " formatdays")) +
+      #   scale_x_date(date_breaks = param$plot_str$date_breaks, expand=c(0,0)) +
+      #   theme_tufte() +
+      #   theme(title = element_text(size = param$plot_num$text_size), plot.title = element_text(hjust = 0)) +
+      #   theme(axis.ticks = element_blank()) +
+      #   theme(panel.border = element_blank()) +
+      #   geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list, key = n_formats)) + 
+      #   theme(legend.position = "none") +
+      #   scale_fill_discrete(na.value = "white") 
+      write.csv(placement_expand, 'data.txt', row.names = F)
 
-      gg <- gg + geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list, key = n_formats)) + 
-        theme(legend.position = "none") +
-        scale_fill_discrete(na.value = "white") 
+      gg <- placement_expand %>% plot_ly(x =~ date, y =~ site_f, z =~ adId, text =~ adId_list)  %>% layout(showlegend = FALSE) %>% add_heatmap()
       gg
       
     }
@@ -161,7 +165,8 @@ get_image     <- function(filtered) {
   return(out)
 }
 check_image   <- function(out) {
-  img <- image_read('http://jeroenooms.github.io/images/tiger.svg')
+  img <- image_read('C:/Users/berdutin/Desktop/R/projects/compet_shiny_plotly/www/not_found.png')
+
   for (i in 1:nrow(out)) { 
     read <- tryCatch({
       image_read(unserializeJSON(out$img[i]))[1]
@@ -203,8 +208,51 @@ shinyServer(function(input, output) {
   
   output$click <- renderPrint({
     d <- event_data("plotly_click")
-    if (is.null(d)) "Click and drag events (i.e., select/lasso) appear here (double-click to clear)" else d
+    if (is.null(d)) "Click to render creative" 
+    else {
+      write.csv(filteredInput(), 'data.txt', row.names = F)
+      clicked <- filteredInput() %>% 
+        
+        filter(as.character(date) == d$x & as.character(site_net) == d$y) %>%
+        mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '/d*'), adId_list))
+      
+      clicked <- unique(clicked$adId)
+      append(d, clicked)
+    }
   })
+  
+  output$myImage <- renderImage({
+    if (v$doPlot == FALSE) return(list(src = 'C:/Users/berdutin/AppData/Local/Temp/RtmpQpm0GMfile34dc5fd8271c.png',
+                                       contentType = 'image/png',
+                                       width = 1,
+                                       height = 1,
+                                       alt = ""))
+    # A temp file to save the output.
+    # This file will be removed later by renderImage
+    d <- event_data("plotly_click")
+    cat(paste(d$x, d$y))
+    if (is.null(d)) return(list(src = 'C:/Users/berdutin/AppData/Local/Temp/RtmpQpm0GMfile34dc5fd8271c.png', contentType = 'image/png', width = 1, height = 1, alt = ""))
+    else {
+      clicked <- filteredInput() %>% 
+        filter(as.character(date) == d$x & as.character(site_net) == d$y) %>%
+        mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '/d*'), adId_list))
+
+      clicked <- unique(clicked$adId)
+      out <- creativeInput() %>% filter(as.character(adId) %in% clicked)
+      img <- check_image(out) %>%
+        image_convert("png", 8)
+      
+      filename <- tempfile(fileext='.png')
+      image_write(img, path = filename, format = "png")
+      
+      list(src = filename,
+           contentType = 'image/png',
+           width = image_info(img)['width'],
+           height = image_info(img)['height'],
+           alt = "This is alternate text")
+    }
+  }, deleteFile = TRUE)
+
   
 })
 

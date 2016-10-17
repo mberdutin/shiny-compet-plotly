@@ -43,8 +43,11 @@ shinyUI(fluidPage(
     ))),
   
   fluidRow(
-    column(width = 12, verbatimTextOutput("click"),
+    
+    column(width = 6, verbatimTextOutput("click")),
+    column(width = 6, imageOutput("myImage"),
            tags$head(tags$script(src="enter_button.js")))
+    
   ),
   fluidRow(
     column(width = 12, plotlyOutput("map"))
