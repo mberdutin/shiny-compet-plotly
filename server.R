@@ -48,7 +48,7 @@ get_data      <- function(brand, date) {
                     from bannerdays
                     where date between date'", date[1], "' and date'", date[2], "'", "
                     and lower(subbrands_list) not similar to '%(", paste(strsplit(brand_excl, ' -')[[1]], collapse = '|'), ")%' 
-                    and lower(subbrands_list) like '%", brand_incl, "%'
+                    and lower(subbrands_list) = '", brand_incl, "'
                     )
                     select * from tmp where rn = 1
                     ")
@@ -59,7 +59,7 @@ get_data      <- function(brand, date) {
                     row_number() over (partition by subbrands_list, banner_network, site, site_category, type, date order by ad_format_adj) rn,
                     count(ad_format_adj) over (partition by subbrands_list, banner_network, site, site_category, type, date) n_formats
                     from bannerdays
-                    where date between date'", date[1], "' and date'", date[2], "' and lower(subbrands_list) like '%", brand, "%'
+                    where date between date'", date[1], "' and date'", date[2], "' and lower(subbrands_list) = '", brand, "'
                     )
                     select * from tmp where rn = 1
                     ")
@@ -70,7 +70,7 @@ get_data      <- function(brand, date) {
   log('get')
   return(data)
   }
-filter_data   <- function(data, top_net, top_sub, top_creative, category, clean, network_first, type) {
+filter_data   <- function(data, top_net, top_creative, category, network_first, type) {
   placement <- data %>%
     mutate(subbrands_list = substr(subbrands_list, 1, 40)) %>%
     mutate(banner_network = gsub('N/A', '_______', banner_network)) %>%
@@ -80,7 +80,6 @@ filter_data   <- function(data, top_net, top_sub, top_creative, category, clean,
     mutate(strength_sub = n()) %>%
     ungroup() %>%
     mutate(rank_sub = dense_rank(desc(strength_sub))) %>%
-    filter(rank_sub <= top_sub) %>%
     group_by(banner_network) %>%
     mutate(strength_net = n()) %>%
     group_by(adId_list) %>%
@@ -98,12 +97,12 @@ filter_data   <- function(data, top_net, top_sub, top_creative, category, clean,
     filter(rank_sub == 1)
   
   if (tolower(category) != 'all') placement <- filter(placement, stri_detect_regex(site_category, gsub(', ', '|', tolower(category))))
-  if (clean > 0) placement <- placement %>% group_by(subbrands_list, banner_network, site) %>% filter(length(unique(date)) > clean) %>% ungroup()
+  # if (clean > 0) placement <- placement %>% group_by(subbrands_list, banner_network, site) %>% filter(length(unique(date)) > clean) %>% ungroup()
   if (type > 1) placement <- placement %>% filter(type == 'network')
-  log(paste('filter', top_net, top_sub, category, clean))
+  log(paste('filter', top_net, category))
   placement
 }
-plot_brand    <- function(placement, plot_type, fill_radio) {
+plot_brand    <- function(placement) {
   
   lev_banner <- placement %>% distinct(banner_network, rank_net) %>% arrange(rank_net)
   lev_site_net   <- placement %>% distinct(site_net) %>% arrange(desc(site_net))
@@ -128,7 +127,7 @@ plot_brand    <- function(placement, plot_type, fill_radio) {
         select(date, site_f, adId, adId_list)
 
 
-      write.csv(placement_expand, 'for_graph.txt', row.names = F)
+      # write.csv(placement_expand, 'for_graph.txt', row.names = F)
 
       gg1 <- placement_expand %>% plot_ly(x =~ date, y =~ site_f, z =~ adId, text =~ adId_list) %>% layout(showlegend = F) %>% add_heatmap() %>% layout(showlegend = F)
       # gg2 <- ggplot(placement_expand, aes(x = date, y = site_f)) +
@@ -148,7 +147,7 @@ plot_brand    <- function(placement, plot_type, fill_radio) {
   }
   
   result <- plot_sub()
-  log(paste('plot', plot_type))
+  log(paste('plot'))
   return(result)
 }
 
@@ -185,7 +184,18 @@ check_image   <- function(out) {
   if (length(img) > 1) img <- img[2:length(img)]
   return(img)
 }
+do_click      <- function(data) {
+  d <- event_data("plotly_click")
+  if (is.null(d)) NULL 
+  else {
+    clicked <- data %>% 
+      
+      filter(as.character(date) == d$x & as.character(site_net) == d$y) %>%
+      mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '/d*'), adId_list))
 
+    return(list(date = d$x, network_site = d$y, adId = unique(clicked$adId), subbrand = unique(clicked$subbrands_list)))
+  }
+}
 
 pg <- dbDriver("PostgreSQL")
 
@@ -194,48 +204,30 @@ shinyServer(function(input, output) {
   observeEvent(input$go, {v$doPlot <- input$go})
   
   dataInput <- reactive({ get_data(input$text, input$dates) })
-  filteredInput <- reactive({ filter_data(dataInput(), input$top_net, input$top_sub, input$top_creative, 
-                                          input$category, input$clean, input$network_first, input$type) })
+  filteredInput <- reactive({ filter_data(dataInput(), input$top_net, input$top_creative, 
+                                          input$category, input$network_first, input$type) })
   creativeInput <- reactive({ get_image(filteredInput()) })
+  creativeInputClick <- reactive({ do_click(filteredInput()) })
   
   output$map <- renderPlotly({
     if (v$doPlot == FALSE) return()
-    isolate({ ggplotly(plot_brand(filteredInput(), plot_type = input$radio, input$fill)) %>% layout(dragmode = 'select') })
+    isolate({ ggplotly(plot_brand(filteredInput())) %>% layout(dragmode = 'select') })
   })
   
-  output$click <- renderPrint({
-    d <- event_data("plotly_click")
-    if (is.null(d)) "Click to render creative" 
-    else {
-      write.csv(filteredInput(), 'data.txt', row.names = F)
-      clicked <- filteredInput() %>% 
-        
-        filter(as.character(date) == d$x & as.character(site_net) == d$y) %>%
-        mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '/d*'), adId_list))
-      
-      clicked <- unique(clicked$adId)
-      append(d, clicked)
-    }
-  })
+  output$click <- renderPrint({ 
+    d <- creativeInputClick() 
+    if (is.null(d)) 'Press Enter and select point by clicking' else d
+    })
   
   output$myImage <- renderImage({
-    if (v$doPlot == FALSE) return(list(src = 'C:/Users/berdutin/AppData/Local/Temp/RtmpQpm0GMfile34dc5fd8271c.png',
-                                       contentType = 'image/png',
-                                       width = 1,
-                                       height = 1,
-                                       alt = ""))
+    
     # A temp file to save the output.
     # This file will be removed later by renderImage
-    d <- event_data("plotly_click")
-    cat(paste(d$x, d$y))
+    d <- do_click(filteredInput())
+
     if (is.null(d)) return(list(src = 'C:/Users/berdutin/AppData/Local/Temp/RtmpQpm0GMfile34dc5fd8271c.png', contentType = 'image/png', width = 1, height = 1, alt = ""))
     else {
-      clicked <- filteredInput() %>% 
-        filter(as.character(date) == d$x & as.character(site_net) == d$y) %>%
-        mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '/d*'), adId_list))
-
-      clicked <- unique(clicked$adId)
-      out <- creativeInput() %>% filter(as.character(adId) %in% clicked)
+      out <- creativeInput() %>% filter(as.character(adId) %in% d$adId)
       img <- check_image(out) %>%
         image_convert("png", 8)
       
