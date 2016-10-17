@@ -116,36 +116,33 @@ plot_brand    <- function(placement, plot_type, fill_radio) {
   plot_sub <- function() {
     one_sub <- function(subbrand) {
       placement <- placement %>% filter(subbrands_list == subbrand)
-      exp_grid <- expand.grid(site_net = unique(placement$site_net), 
-                              date = date_range, N = 0, stringsAsFactors = F) 
       
       placement_expand <- placement %>%
-        full_join(exp_grid) %>%
-        mutate(n_formats = ifelse(is.na(n_formats), N, n_formats)) %>%
-        mutate(site_f = factor(site_net, levels = lev_site_net$site_net)) %>%
+        mutate(site_f = as.character(site_net), date = as.character(date)) %>%
         mutate(type_fl = type == 'network') %>%
         filter(!is.na(site_f)) %>%
         mutate(shade = ifelse(dense_rank(site_f) %% 10 == 0, 1, 0)) %>%
         mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '/d*'), adId_list)) %>%
         mutate(adId = as.integer(adId)) %>%
-        filter(!is.na(adId))
-      # key <- row.names(placement_expand)
-      # gg <- ggplot(placement_expand, aes(x = date, y = site_f, key = n_formats)) +
+        filter(!is.na(adId)) %>%
+        select(date, site_f, adId, adId_list)
+
+
+      write.csv(placement_expand, 'for_graph.txt', row.names = F)
+
+      gg1 <- placement_expand %>% plot_ly(x =~ date, y =~ site_f, z =~ adId, text =~ adId_list) %>% layout(showlegend = F) %>% add_heatmap() %>% layout(showlegend = F)
+      # gg2 <- ggplot(placement_expand, aes(x = date, y = site_f)) +
       #   coord_equal() +
       #   labs(x = NULL, y = NULL, title = paste0(subbrand, ', ', nrow(placement), " formatdays")) +
-      #   scale_x_date(date_breaks = param$plot_str$date_breaks, expand=c(0,0)) +
+      #   # scale_x_date(date_breaks = param$plot_str$date_breaks, expand=c(0,0)) +
       #   theme_tufte() +
       #   theme(title = element_text(size = param$plot_num$text_size), plot.title = element_text(hjust = 0)) +
       #   theme(axis.ticks = element_blank()) +
       #   theme(panel.border = element_blank()) +
-      #   geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list, key = n_formats)) + 
-      #   theme(legend.position = "none") +
-      #   scale_fill_discrete(na.value = "white") 
-      write.csv(placement_expand, 'data.txt', row.names = F)
-
-      gg <- placement_expand %>% plot_ly(x =~ date, y =~ site_f, z =~ adId, text =~ adId_list)  %>% layout(showlegend = FALSE) %>% add_heatmap()
-      gg
-      
+      #   geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) +
+      #   theme(legend.position = "none") + scale_fill_discrete(na.value = "white")
+      # subplot(gg1, ggplotly(gg2), nrows = 2, margin = 0.05)
+      gg1
     }
     return(one_sub(lev_sub$subbrands_list[1]))
   }
