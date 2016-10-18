@@ -26,6 +26,7 @@ shinyUI(fluidPage(
       column(2, textInput("category", label = h5("Site category (e.g. auto, news)"), value = param$default_str$category)),
       column(1, numericInput("top_net", label = h5("Top networks"), value = param$default_num$top_net)),
       column(1, numericInput("top_creative", label = h5("Top creatives"), value = param$default_num$top_creative)),
+      column(1, numericInput("clean", label = h5("Min days per row"), value = param$default_num$clean)),
       # plot
       # column(2, radioButtons("radio", label = h5("Facet to plot"),
       #                        choices = list("Subbrands ~ network + site" = 1, 
@@ -44,12 +45,12 @@ shinyUI(fluidPage(
   
   fluidRow(
     
-    column(width = 4, verbatimTextOutput("click")),
-    column(width = 8, imageOutput("myImage"),
+    column(width = 4, div(style = "height:300px", verbatimTextOutput("click"))),
+    column(width = 8, div(style = "height:300px", imageOutput("myImage")),
            tags$head(tags$script(src="enter_button.js")))
     
   ),
   fluidRow(
-    column(width = 12, plotlyOutput("map"))
+    column(width = 12, plotlyOutput("map", height = "600px"))
   )
 ))

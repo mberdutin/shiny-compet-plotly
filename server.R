@@ -70,7 +70,7 @@ get_data      <- function(brand, date) {
   log('get')
   return(data)
   }
-filter_data   <- function(data, top_net, top_creative, category, network_first, type) {
+filter_data   <- function(data, top_net, top_creative, category, network_first, type, clean) {
   placement <- data %>%
     mutate(subbrands_list = substr(subbrands_list, 1, 40)) %>%
     mutate(banner_network = gsub('N/A', '_______', banner_network)) %>%
@@ -97,9 +97,10 @@ filter_data   <- function(data, top_net, top_creative, category, network_first, 
     filter(rank_sub == 1)
   
   if (tolower(category) != 'all') placement <- filter(placement, stri_detect_regex(site_category, gsub(', ', '|', tolower(category))))
-  # if (clean > 0) placement <- placement %>% group_by(subbrands_list, banner_network, site) %>% filter(length(unique(date)) > clean) %>% ungroup()
+  if (clean > 0) placement <- placement %>% group_by(subbrands_list, banner_network, site) %>% filter(length(unique(date)) > clean) %>% ungroup()
   if (type > 1) placement <- placement %>% filter(type == 'network')
   log(paste('filter', top_net, category))
+  write.csv(placement, 'filter.txt', row.names = F)
   placement
 }
 plot_brand    <- function(placement) {
@@ -121,7 +122,7 @@ plot_brand    <- function(placement) {
         mutate(type_fl = type == 'network') %>%
         filter(!is.na(site_f)) %>%
         mutate(shade = ifelse(dense_rank(site_f) %% 10 == 0, 1, 0)) %>%
-        mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '/d*'), adId_list)) %>%
+        mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '[0-9]*'), adId_list)) %>%
         mutate(adId = as.integer(adId)) %>%
         filter(!is.na(adId)) %>%
         select(date, site_f, adId, adId_list)
@@ -141,7 +142,11 @@ plot_brand    <- function(placement) {
       #   geom_tile(colour = 'black', size = param$plot_num$tile_size, aes(fill = adId_list)) +
       #   theme(legend.position = "none") + scale_fill_discrete(na.value = "white")
       # subplot(gg1, ggplotly(gg2), nrows = 2, margin = 0.05)
-      gg1
+      pb <- plotly_build(gg1)
+      pb$x$layout$margin$b <- 100
+      pb$x$layout$margin$l <- 150
+      pb$x$data[[1]]$showscale <- FALSE
+      pb
     }
     return(one_sub(lev_sub$subbrands_list[1]))
   }
@@ -165,7 +170,14 @@ check_image   <- function(out) {
 
   for (i in 1:nrow(out)) { 
     read <- tryCatch({
-      image_read(unserializeJSON(out$img[i]))[1]
+      arr <- image_read(unserializeJSON(out$img[i]))
+      horizontal_append <- image_info(arr[1])$width > image_info(arr[1])$height
+      if (length(arr) == 1) {
+        arr_r <- arr[1] 
+      }
+      if (length(arr) == 2) arr_r <- image_append(arr[1:2], stack = horizontal_append) 
+      if (length(arr) > 2) arr_r <- image_append(arr[c(1, ceiling(length(arr) / 2), length(arr))], stack = horizontal_append)
+      arr_r
     },
     error = function(cond) {
       message(paste("Cant read image", out$adId[i]))
@@ -176,22 +188,19 @@ check_image   <- function(out) {
     if (inherits(read, "error")) next
     info <- image_info(read)
     annotation <- paste(as.character(out$adId[i]), info$format, paste(info$width, info$height, sep = 'x'))
-    if (info$width >= 600 && info$height > 100) read <- image_scale(read, 'x100')
-    if (info$width >= 600 && info$height < 100) read <- image_scale(read, '600x')
-    if (abs(info$width - info$height) < 100) read <- image_scale(read, '300x')
-    img <- append(img, image_annotate(read, annotation, color = "white", size = 20, boxcolor = "black"))
+    img <- append(img, image_annotate(read, annotation, color = "white", size = 20, boxcolor = "black") %>% image_scale('x300')) 
   }
   if (length(img) > 1) img <- img[2:length(img)]
   return(img)
 }
 do_click      <- function(data) {
-  d <- event_data("plotly_click")
+  d <- event_data("plotly_hover")
   if (is.null(d)) NULL 
   else {
     clicked <- data %>% 
       
       filter(as.character(date) == d$x & as.character(site_net) == d$y) %>%
-      mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '/d*'), adId_list))
+      mutate(adId = ifelse(stri_detect_fixed(adId_list, ','), stri_extract_first_regex(adId_list, '[0-9]*'), adId_list))
 
     return(list(date = d$x, network_site = d$y, adId = unique(clicked$adId), subbrand = unique(clicked$subbrands_list)))
   }
@@ -205,7 +214,7 @@ shinyServer(function(input, output) {
   
   dataInput <- reactive({ get_data(input$text, input$dates) })
   filteredInput <- reactive({ filter_data(dataInput(), input$top_net, input$top_creative, 
-                                          input$category, input$network_first, input$type) })
+                                          input$category, input$network_first, input$type, input$clean) })
   creativeInput <- reactive({ get_image(filteredInput()) })
   creativeInputClick <- reactive({ do_click(filteredInput()) })
   
@@ -227,7 +236,8 @@ shinyServer(function(input, output) {
 
     if (is.null(d)) return(list(src = 'C:/Users/berdutin/AppData/Local/Temp/RtmpQpm0GMfile34dc5fd8271c.png', contentType = 'image/png', width = 1, height = 1, alt = ""))
     else {
-      out <- creativeInput() %>% filter(as.character(adId) %in% d$adId)
+      out <- creativeInput() %>% filter(as.character(adId) %in% d$adId) %>% filter(nchar(as.character(adId)) > 2)
+      if (nrow(out) == 0) return(list(src = 'C:/Users/berdutin/AppData/Local/Temp/RtmpQpm0GMfile34dc5fd8271c.png', contentType = 'image/png', width = 1, height = 1, alt = ""))
       img <- check_image(out) %>%
         image_convert("png", 8)
       
