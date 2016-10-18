@@ -27,9 +27,6 @@ log <- function(text, conn = log_file) {
 }
 
 param <- read.ini('setup.ini')
-param$plot_num    <- lapply(param$plot_num, as.numeric)
-param$format_a <- lapply(param$format, function(x) {as.numeric(strsplit(x, '-')[[1]][1])})
-param$format_b <- lapply(param$format, function(x) {as.numeric(strsplit(x, '-')[[1]][2])})
 
 
 get_data      <- function(brand, date) {
@@ -166,7 +163,7 @@ get_image     <- function(filtered) {
   return(out)
 }
 check_image   <- function(out) {
-  img <- image_read('C:/Users/berdutin/Desktop/R/projects/compet_shiny_plotly/www/not_found.png')
+  img <- image_read(param$default_img$path)
 
   for (i in 1:nrow(out)) { 
     read <- tryCatch({
@@ -188,7 +185,7 @@ check_image   <- function(out) {
     if (inherits(read, "error")) next
     info <- image_info(read)
     annotation <- paste(as.character(out$adId[i]), info$format, paste(info$width, info$height, sep = 'x'))
-    img <- append(img, image_annotate(read, annotation, color = "white", size = 20, boxcolor = "black") %>% image_scale('x300')) 
+    img <- append(img, image_annotate(read, annotation, color = "white", size = 20, boxcolor = "black") %>% image_scale(paste0('x', param$format$height_1row))) 
   }
   if (length(img) > 1) img <- img[2:length(img)]
   return(img)
@@ -225,7 +222,7 @@ shinyServer(function(input, output) {
   
   output$click <- renderPrint({ 
     d <- creativeInputClick() 
-    if (is.null(d)) 'Press Enter and select point by clicking' else d
+    if (is.null(d)) 'Press Enter and select point' else d
     })
   
   output$myImage <- renderImage({
@@ -234,10 +231,10 @@ shinyServer(function(input, output) {
     # This file will be removed later by renderImage
     d <- do_click(filteredInput())
 
-    if (is.null(d)) return(list(src = 'C:/Users/berdutin/AppData/Local/Temp/RtmpQpm0GMfile34dc5fd8271c.png', contentType = 'image/png', width = 1, height = 1, alt = ""))
+    if (is.null(d)) return(list(src = tempfile(fileext='.png'), contentType = 'image/png', width = 1, height = 1, alt = ""))
     else {
       out <- creativeInput() %>% filter(as.character(adId) %in% d$adId) %>% filter(nchar(as.character(adId)) > 2)
-      if (nrow(out) == 0) return(list(src = 'C:/Users/berdutin/AppData/Local/Temp/RtmpQpm0GMfile34dc5fd8271c.png', contentType = 'image/png', width = 1, height = 1, alt = ""))
+      if (nrow(out) == 0) return(list(src = tempfile(fileext='.png'), contentType = 'image/png', width = 1, height = 1, alt = ""))
       img <- check_image(out) %>%
         image_convert("png", 8)
       
@@ -248,7 +245,7 @@ shinyServer(function(input, output) {
            contentType = 'image/png',
            width = image_info(img)['width'],
            height = image_info(img)['height'],
-           alt = "This is alternate text")
+           alt = "")
     }
   }, deleteFile = TRUE)
 

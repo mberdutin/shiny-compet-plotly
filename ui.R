@@ -28,15 +28,6 @@ shinyUI(fluidPage(
       column(1, numericInput("top_creative", label = h5("Top creatives"), value = param$default_num$top_creative)),
       column(1, numericInput("clean", label = h5("Min days per row"), value = param$default_num$clean)),
       # plot
-      # column(2, radioButtons("radio", label = h5("Facet to plot"),
-      #                        choices = list("Subbrands ~ network + site" = 1, 
-      #                                       "Subbrands ~ formats + site" = 5,
-      #                                       "Network ~ site" = 4, 
-      #                                       "Network ~ subbrands" = 3, 
-      #                                       "Site ~ network + subbrands" = 2), 
-      #                        selected = param$default_num$facet)),
-      # column(1, radioButtons("type", label = h5("Type to plot"), choices = list("All" = 1, "Network" = 2)), 
-      #        radioButtons("fill", label = h5("Stat to plot"), choices = list("Formats count" = 1, "Creative id" = 2), selected = param$default_num$fill)),
       column(1, radioButtons("type", label = h5("Type to plot"), choices = list("All" = 1, "Network" = 2))),
       column(1, checkboxInput("network_first", label = "Network first", value = param$default_num$network_first == 1), 
              actionButton("go", "Draw the map (Enter)", icon = icon('picture-o')))
@@ -45,12 +36,12 @@ shinyUI(fluidPage(
   
   fluidRow(
     
-    column(width = 4, div(style = "height:300px", verbatimTextOutput("click"))),
-    column(width = 8, div(style = "height:300px", imageOutput("myImage")),
+    column(width = 4, div(style = paste0("height:", param$format$height_1row, "px"), verbatimTextOutput("click"))),
+    column(width = 8, div(style = paste0("height:", param$format$height_1row, "px"), imageOutput("myImage")),
            tags$head(tags$script(src="enter_button.js")))
     
   ),
   fluidRow(
-    column(width = 12, plotlyOutput("map", height = "600px"))
+    column(width = 12, plotlyOutput("map", height = paste0(param$format$height_2row, "px")))
   )
 ))
